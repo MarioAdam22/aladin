@@ -2578,6 +2578,23 @@ async def _auto_execute(analysis: Dict, tick: NT8Data):
         }
         _sl_pts_base = _SL_POINTS.get(_strat_id, 30)
 
+        # ── BIN60 ATR-BASED SL OVERRIDE ──────────────────────────────────────
+        # Backtest OOS 2023-2025: SL optim = ~0.87×ATR (median 6pts, max 14pts).
+        # Bridge folosea SL fix 20-35pts → mismatch față de backtest.
+        # Când short_only_bin60 e activ ȘI semnalul e în bin60/bin90,
+        # overrideăm SL la ATR-based pentru a alinia cu logica backtestată.
+        # Floor: 5pts (minim funcțional pe NQ)  Ceiling: 15pts (max acceptabil).
+        # Activat cu: strat["bin60_atr_sl"] = True
+        _bin60_atr_sl = bool(strat.get("bin60_atr_sl", False))
+        if _bin60_atr_sl and _short_only_filter:
+            _atr_for_sl = tick.atr_14 if (hasattr(tick, 'atr_14') and tick.atr_14 > 0) else 7.0
+            _sl_pts_base = max(5, min(15, int(round(_atr_for_sl * 0.87))))
+            log.info(
+                f"   🎯 BIN60 ATR-SL: SL={_sl_pts_base}pts (ATR={_atr_for_sl:.1f} × 0.87) "
+                f"← aliniament backtest (median 6pts OOS 2023-2025)"
+            )
+        # ─────────────────────────────────────────────────────────────────────
+
         # ── E5: ATR-RELATIVE SL/TP (top 0.1% risk management) ────────────────
         # SL fix = pierderi mari în piețe volatile / premature exit în piețe liniștite.
         # Soluție: scalăm SL față de ATR curent vs ATR "tipic" per strategie.
