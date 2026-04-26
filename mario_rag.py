@@ -125,7 +125,7 @@ logger = logging.getLogger(__name__)
 # CONSTANTE GLOBALE
 # =============================================================================
 PATH_DB      = "/Users/mario/Desktop/Aladin/mario_trading.db"
-MODEL_PATH   = "/Users/mario/Desktop/Aladin/mario_bot.json"
+MODEL_PATH   = "/Users/mario/Desktop/Aladin/mario_bot_open.json"
 JOURNAL_PATH = "/Users/mario/Desktop/Aladin/aladin_trade_journal.csv"
 RAG_INDEX_PATH   = "/Users/mario/Desktop/Aladin/aladin_rag.index"
 RAG_META_PATH    = "/Users/mario/Desktop/Aladin/aladin_rag_meta.json"
@@ -137,7 +137,7 @@ INSTRUMENT_PARAMS = {
     # SL_MAX 30pts × 2ct × $20 = $1,200 = 60% din MLL → inadmisibil pe prop firm
     # Nou: SL_MAX 18pts × 2ct × $20 = $720 = 36% MLL | SL_DEFAULT 12pts = 1.15× ATR median
     # SL_MIN 8pts: permite niveluri structurale reale la 8-10pts (anterior ignorate)
-    "NQ":  {"point_value": 20.0, "sl_default": 12.0, "sl_min": 8.0, "sl_max": 18.0},
+    "NQ":  {"point_value": 20.0, "sl_default": 12.0, "sl_min": 8.0, "sl_max": 15.0},  # v14: cap 15pt propfirm
 }
 
 def _get_sl_params(instrument: str = "NQ") -> dict:
@@ -434,7 +434,8 @@ def check_volatility_filter(df: pd.DataFrame) -> tuple:
         # pentru comparație corectă — NU doar cele 100 bare din df
         import sqlite3
         try:
-            conn_vol = sqlite3.connect(PATH_DB)
+            conn_vol = sqlite3.connect(f'file:{PATH_DB}?mode=ro', uri=True,
+                                       timeout=30, check_same_thread=False)
             hist_atr = pd.read_sql_query(
                 "SELECT atr_14 FROM market_data WHERE atr_14 > 0 ORDER BY timestamp DESC LIMIT 35000",
                 conn_vol
@@ -1111,7 +1112,8 @@ def train_main_circuit(journal_df: pd.DataFrame = None, epochs: int = 50):
             else:
                 # Fallback: încearcă DB
                 try:
-                    conn = sqlite3.connect(PATH_DB)
+                    conn = sqlite3.connect(f'file:{PATH_DB}?mode=ro', uri=True,
+                                           timeout=30, check_same_thread=False)
                     journal_df = pd.read_sql_query("SELECT * FROM market_data ORDER BY ROWID DESC LIMIT 2000", conn)
                     conn.close()
                     logger.info(f"⚛️  Quantum train (DB fallback): {len(journal_df)} bare")
@@ -3092,7 +3094,10 @@ def aladin_engine(query: str, balance: float = 10000, live_data: dict = None) ->
             "score": 0,
         }
 
-    conn = sqlite3.connect(PATH_DB)
+    # FIX v10.6: read-only URI — nu schimbăm journal_mode (NT8 are DB deschis pentru scriere)
+    # PRAGMA journal_mode=WAL pe o conexiune read-write → disk I/O error când NT8 scrie simultan
+    conn = sqlite3.connect(f'file:{PATH_DB}?mode=ro', uri=True,
+                           timeout=30, check_same_thread=False)
 
     try:
         # ── 1. Parsing timp & calendar ───────────────────────────────────────
@@ -4075,16 +4080,23 @@ def aladin_engine(query: str, balance: float = 10000, live_data: dict = None) ->
                     if _vf not in df.columns:
                         df[_vf] = 0.0
 
-        # ── 4. AI Prediction (v8.1 — XGBoost raw prioritar) ────────────
-        # FIX: Calibrated model (Platt/Isotonic) ucidea SHORT complet
-        # (precision 0%, recall 0%). XGBoost raw dă SHORT cu 27% precision
-        # care e suficient cu trailing SL. Calibrated DEZACTIVAT.
-        _cal_path = MODEL_PATH.replace('.json', '_calibrated.pkl')
-        ai_direction = "NEUTRAL"  # default — suprascris de model dacă există
-        if not os.path.exists(MODEL_PATH):
-            logger.warning("Model AI lipsă → fallback 0.0 (neutru, nu semnalează)")
-            base_ai = 0.0
+        # ── 4. AI Score — Quality Gate v2/v5 (înlocuiește mario_bot_open.json) ──
+        # mario_bot_open.json era un model vechi (2015-2021, AUC slab) care contribuia
+        # greșit la hybrid score. Înlocuit cu scorul Quality Gate v6 (LON, AUC OOS=0.79)
+        # și ny_v3 (NY, AUC OOS=0.72), injectat din bridge_api.py via live_data['qg_score']
+        # după ce ict_gate.gate_verdict() rulează.
+        ai_direction = "NEUTRAL"
+        _qg_score    = float((live_data or {}).get('qg_score', 0.0))
+        _qg_dir      = str((live_data or {}).get('qg_direction', 'NEUTRAL'))
+        if _qg_score > 0 and _qg_dir in ('LONG', 'SHORT'):
+            base_ai      = _qg_score
+            ai_direction = _qg_dir
+            logger.info(f"   🤖 AI (QualityGate v2/v5): score={base_ai:.3f} dir={ai_direction}")
         else:
+            base_ai = 0.0
+            logger.info(f"   🤖 AI (QualityGate): score unavailable → base_ai=0.0")
+
+        if False:  # DISABLED: mario_bot_open.json (kept for reference, do not remove)
             try:
                 # v10.6: ALL feature groups — sincronizat cu train_mario_ai.py
                 all_features = (FEATURES_STRICT + FEATURES_EXTRA + FEATURES_VP_OF

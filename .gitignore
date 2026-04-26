@@ -1,0 +1,141 @@
+# ══════════════════════════════════════════════════════
+#  Aladin Engine — .gitignore
+#  NICIODATĂ nu push-ui astea pe GitHub/public repos
+# ══════════════════════════════════════════════════════
+
+# ── Secrets & credentials ──────────────────────────────
+.env
+.env.*
+*.key
+*.pem
+*.p12
+secrets.json
+credentials.json
+
+# ── ML Models (IP protejat, fișiere mari) ─────────────
+mario_bot.json
+mario_bot_*.pkl
+mario_bot_*.json
+aladin_main_weights.npy
+*.pkl
+*.joblib
+mario_features.json
+mario_bot_feat_imp.csv
+
+# ── Database ───────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ── Python cache ───────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# ── Virtual environments ───────────────────────────────
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+
+# ── Logs & temp ────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+Thumbs.db
+.fuse_hidden*
+*.pid
+*.txt
+!nt8/nt8_addons/BRIDGE_INTEGRATION.md
+
+# ── NinjaTrader exports (date raw, nu cod) ─────────────
+*.csv
+!requirements.txt
+
+# ── IDE ────────────────────────────────────────────────
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# ── Docker local overrides ─────────────────────────────
+docker-compose.override.yml
+
+# ── Test & coverage ────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── Training datasets (date proprietare) ───────────────
+*.parquet
+data/
+setups/
+datasets/
+
+# ── Optuna studies & feature selection ─────────────────
+sweep_v2_optuna_*.pkl
+sweep_v2_study_*.pkl
+sweep_v2_feature_selection.pkl
+
+# ── Meta JSON cu features/thresholds exacte (EDGE) ────
+*_features.json
+*_meta.json
+model_config.json
+rl_weights.json
+rl_history.json
+mario_quality_*.json
+mario_quality_ts_*.json
+ict_gate_state.json
+lom_checker_state.json
+nom_checker_state.json
+mario_bot_open.json
+mario_bot_open_features.json
+data/active_strategy.json
+
+# ── RAG index (date private) ───────────────────────────
+*.index
+rag/
+aladin_rag_meta.json
+
+# ── Backup-uri modele vechi ────────────────────────────
+backup_v2_bad/
+
+# ── Date trading personale ────────────────────────────
+aladin_trade_journal.csv
+logs/
+refresh_log.txt
+bridge.log
+
+# ── Jupyter ────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── dingrs/ — date istorice raw (nu cod) ──────────────
+dingrs/*.csv
+dingrs/*.txt
+dingrs/*.db
+dingrs/last_backtest.json
+dingrs/mario_journal.csv
+dingrs/train_log.txt
+dingrs/mario_bot_calibrated_BACKUP_pre_patch.pkl
+dingrs/mario_bot_feat_imp.csv
+
+# ── PDF-uri (carousel LinkedIn, nu relevante pt repo) ──
+*.pdf
+
+# ── SaaS layer — business logic privat, nu se publică ──
+saas/

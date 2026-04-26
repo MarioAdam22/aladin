@@ -100,6 +100,18 @@ except Exception:
     _tg_geo_risk_update = None
     _tg_daily_report    = None
 
+# ─── ICT Gate v3 — filtru semnal pre-trade (setup_v3 rules) ──────────────────
+# Backtest OOS 2024-2025: WR=45%, $1083/luna, MaxDD=-$1105, NEVER BLOWN
+try:
+    import ict_gate_v3 as _ict_gate
+    _ICT_GATE_OK = True
+    log_init = logging.getLogger("aladin")
+    log_init.info("✅ ICT Gate v3 activ — max 1 trade/zi, SL≤15pt, WR≈45%")
+except Exception as _ict_err:
+    _ICT_GATE_OK = False
+    _ict_gate = None
+    logging.getLogger("aladin").warning(f"ICT Gate v3 indisponibil: {_ict_err}")
+
 # ─── SHORT Quality Model — lazy loader (AUC=0.80, bin60+bin90 filter) ─────────
 # Antrenat pe NY SHORT signals 2023-2024, testat OOS 2025.
 # Filtrează semnalele SHORT de calitate slabă (TRAIL_STOP=0) față de cele bune (TRAIL_STOP=1).
@@ -136,9 +148,14 @@ def _load_short_quality_model():
         return None, None
 
 # ─── Logging ───────────────────────────────────────────────────────────────────
+_LOG_FILE = Path.home() / "Desktop" / "Aladin" / "bridge.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [ALADIN] %(levelname)s — %(message)s",
+    handlers=[
+        logging.StreamHandler(),                          # consolă
+        logging.FileHandler(_LOG_FILE, encoding="utf-8"), # bridge.log
+    ]
 )
 log = logging.getLogger("aladin")
 
@@ -1394,6 +1411,44 @@ async def run_analysis_async(tick: NT8Data):
 
 def _call_mario_rag(tick: NT8Data) -> Optional[Dict]:
     try:
+        # ── ICT GATE v3: verificare pre-trade (setup_v3 rules) ──────────────────
+        # Regulă: max 2 trade/zi, SL≤12pt, setup ICT valid (sweep+disp+FVG+retrace+trend)
+        # Dacă gate-ul nu confirmă → mario_rag RULEAZĂ ÎN CONTINUARE (pentru monitoring/log)
+        # dar _auto_execute e blocat prin flag ict_gate="WAIT" în result.
+        _qg_score     = 0.0      # Quality Gate score — injectat în live_data pentru mario_rag
+        _qg_direction = "NEUTRAL"  # direcția din ICT setup (LONG/SHORT)
+        _gate_blocked = False   # True = gate zice WAIT → analiza rulează dar execuția e blocată
+        if _ICT_GATE_OK and _ict_gate is not None:
+            try:
+                from datetime import timezone
+                _now_utc = datetime.now(timezone.utc)
+                _gate_verdict, _gate_sig = _ict_gate.gate_verdict(
+                    "/Users/mario/Desktop/Aladin/mario_trading.db", _now_utc
+                )
+                if _gate_verdict != "TRADE":
+                    log.info(f"⏳ ICT Gate: WAIT — condiţii neîndeplinite la {_now_utc.strftime('%H:%M')} UTC (mario_rag rulează pentru monitoring)")
+                    _gate_blocked = True   # nu returnăm — lăsăm mario_rag să ruleze și să logeze analiza
+                else:
+                    # Gate confirmă — stocăm semnalul gate pentru _auto_execute
+                    _ml_sc  = _gate_sig.get('ml_score', 0.0)
+                    _stk_sc = _gate_sig.get('stacking_score', 0.0)
+                    _swp_sc = _gate_sig.get('sweep_prob', 0.0)
+                    _ml_emoji = "🟢" if _ml_sc >= 0.40 else ("🟡" if _ml_sc >= 0.25 else "🔴")
+                    log.info(
+                        f"ICT Gate: TRADE CONFIRMAT → {_gate_sig.get('message','')} | "
+                        f"composite={_ml_sc:.3f}{_ml_emoji} "
+                        f"stk={_stk_sc:.3f} swp={_swp_sc:.3f} "
+                        f"regime={_gate_sig.get('regime','?')} macro={_gate_sig.get('macro_regime','?')}"
+                    )
+                    state._ict_gate_signal = _gate_sig  # stocat pe state pentru _auto_execute
+                    # ── Injectăm QG score în live_data → mario_rag îl folosește ca base_ai ──
+                    _qg_score = float(_gate_sig.get('ml_score', 0.0))
+                    _qg_action = str(_gate_sig.get('action', ''))
+                    _qg_direction = 'LONG' if _qg_action.startswith('LONG') else ('SHORT' if _qg_action.startswith('SHORT') else 'NEUTRAL')
+                    log.info(f"QG→mario_rag: score={_qg_score:.3f} dir={_qg_direction} (action={_qg_action})")
+            except Exception as _ge:
+                log.warning(f"ICT Gate eroare (fallback mario_rag): {_ge}")
+
         import sys
         rag_dir = os.path.dirname(os.path.abspath(__file__))
         if rag_dir not in sys.path:
@@ -1558,8 +1613,18 @@ def _call_mario_rag(tick: NT8Data) -> Optional[Dict]:
             "geo_sentiment":     state.geo_sentiment,
             # v10.6: OF Consolidation Metrics — compute-uri din delta_history
             "of_consol_metrics": getattr(state, '_of_consol_metrics', {}),
+            # ── Quality Gate score (înlocuiește mario_bot_open.json în mario_rag step 4) ──
+            # Setat mai sus după ict_gate.gate_verdict() — 0.0 dacă gate n-a rulat
+            "qg_score":     _qg_score,
+            "qg_direction": _qg_direction,
         }
-        return mario_rag.aladin_engine(query=query, balance=10000, live_data=live_data)
+        _result = mario_rag.aladin_engine(query=query, balance=10000, live_data=live_data)
+        # Dacă ICT Gate a zis WAIT: analiza a rulat (e vizibilă în log) dar blocăm execuția
+        # Nu suprascriem trade_direction → Telegram arată direcția reală (LONG/SHORT)
+        # _auto_execute e blocat prin ict_gate="WAIT" check la linia de sus
+        if _gate_blocked and isinstance(_result, dict):
+            _result["ict_gate"] = "WAIT"
+        return _result
     except Exception as e:
         log.warning(f"mario_rag skipped: {e}")
         return None
@@ -1568,6 +1633,67 @@ async def _auto_execute(analysis: Dict, tick: NT8Data):
     # UPDATE #5: Respectă toggle-ul din Dashboard
     if not state.autotrade_enabled:
         return
+
+    # ICT Gate blocat: analiza a rulat (vizibilă în log) dar execuția nu e permisă
+    if analysis.get("ict_gate") == "WAIT":
+        log.info(f"🚫 _auto_execute: ICT Gate WAIT → execuție blocată (scor={analysis.get('score',0):.1f}%)")
+        return
+
+    # ── META-SCORER v1: filtru secundar (signal × regime × rag) ───────────────
+    # Rulează DUPĂ gate_verdict (TRADE confirmat) + mario_rag (avem rag_direction/score)
+    # Blochează trade-uri cu scor compus sub META_THRESHOLD chiar dacă gate zice TRADE
+    try:
+        from meta_scorer_v1 import compute_meta_score, META_THRESHOLD as _META_THR
+        _ms_gate_sig    = getattr(state, '_ict_gate_signal', None) or {}
+        _ms_regime      = _ms_gate_sig.get('regime', 'UNKNOWN')
+        _ms_regime_prob = float(_ms_gate_sig.get('regime_prob', 0.0))
+        _ms_rag_dir     = str(analysis.get('trade_direction', '') or '').upper()
+        _ms_rag_sc      = float(analysis.get('score', 50.0) or 50.0)
+        _meta_sc, _meta_bd = compute_meta_score(
+            signal=_ms_gate_sig,
+            regime=_ms_regime,
+            regime_prob=_ms_regime_prob,
+            rag_direction=_ms_rag_dir,
+            rag_score=_ms_rag_sc,
+        )
+        if _meta_sc < _META_THR:
+            log.info(
+                f"🚫 MetaScore {_meta_sc:.4f} < {_META_THR} → BLOCAT "
+                f"(sig={_meta_bd['signal_score']:.3f} × "
+                f"mult={_meta_bd['regime_mult']:.3f} × "
+                f"rag_agr={_meta_bd['rag_agreement']:.2f} × "
+                f"rag_norm={_meta_bd['rag_norm']:.3f})"
+            )
+            return
+        log.info(f"✅ MetaScore {_meta_sc:.4f} ≥ {_META_THR} → execuție aprobată")
+    except Exception as _mse:
+        log.warning(f"meta_scorer_v1 error (skip filter, execuție continuă): {_mse}")
+
+    # ── TS CONFLICT GUARD: TS Gate vs mario_rag direction ─────────────────────
+    # Când TS Gate (Turtle Soup) semnalează o direcție dar mario_rag are direcție
+    # OPUSĂ, asta e un semn clasic de MANIPULARE ICT:
+    #   - piața face sweep în direcția TS (ia lichiditate)
+    #   - după sweep, price-ul se întoarce în direcția HTF (mario_rag)
+    # Entry imediat la semnalul TS = entry în premium/discount greșit = SL hit garantat.
+    # FIX: blocăm entry-ul → lăsăm NOM/LOM checker să intre DUPĂ sweep cu SL de 12pt.
+    # Exemplu real 2026-04-22: TS SHORT @ 26871, mario_rag LONG → piața a urcat la 26885.
+    _gate_sig_ts = getattr(state, '_ict_gate_signal', None)
+    if _gate_sig_ts:
+        _gs_setup_type = str(_gate_sig_ts.get('setup_type', '')).upper()
+        if 'TS' in _gs_setup_type:
+            _gs_direction  = str(_gate_sig_ts.get('direction', '')).upper()
+            _rag_direction = str(analysis.get('trade_direction', '')).upper()
+            if (_gs_direction and _rag_direction
+                    and _gs_direction != _rag_direction
+                    and _rag_direction not in ('NEUTRAL', '')):
+                log.warning(
+                    f"⚠️ TS CONFLICT GUARD: Gate={_gs_direction} ({_gs_setup_type}) ≠ "
+                    f"mario_rag={_rag_direction} → MANIPULARE detectată "
+                    f"(sweep {_gs_direction}, HTF bias {_rag_direction}) "
+                    f"→ entry BLOCAT — NOM/LOM checker va intra după sweep"
+                )
+                return
+    # ─────────────────────────────────────────────────────────────────────────
 
     # UPDATE #14e: Nu executa dacă există deja o poziție deschisă
     # ── REVERSAL TRADING: când conviction flipează, close + entry opus ────────
@@ -2874,6 +3000,12 @@ async def _auto_execute(analysis: Dict, tick: NT8Data):
                 state.consecutive_losses  = 0        # reset la WIN
                 state.daily_profit_usd   += raw_pnl  # acumulăm profitul zilei
                 log.info(f"✅ WIN ${raw_pnl:+.2f} — profit azi: ${state.daily_profit_usd:.2f}")
+            # ── RL context update — notifică stacking de rezultatul trade-ului ──
+            if _ICT_GATE_OK and _ict_gate is not None:
+                try:
+                    _ict_gate.record_trade_outcome(raw_pnl > 0)
+                except Exception:
+                    pass
             # Session max tracking (paper mode)
             _sess_net = state.daily_profit_usd - state.daily_loss_usd
             if _sess_net > state.session_max_profit:
@@ -3051,6 +3183,7 @@ async def _auto_execute(analysis: Dict, tick: NT8Data):
                 _tg_poc  = float(getattr(state, "poc",  0) or 0)
                 _tg_vah  = float(getattr(state, "vah",  0) or 0)
                 _tg_val  = float(getattr(state, "val",  0) or 0)
+                _tg_ml_score = float((getattr(state, '_ict_gate_signal', None) or {}).get('ml_score', 0.0))
                 _tg_poc_dist = round(entry_px - _tg_poc, 1) if _tg_poc and entry_px else 0
                 _tg_vp   = {
                     "rvol":     round(getattr(state, "rvol", 1.0), 2),
@@ -3078,6 +3211,7 @@ async def _auto_execute(analysis: Dict, tick: NT8Data):
                     ict_signals        = _tg_ict_sg,
                     vp_context         = _tg_vp,
                     delta_exhaustion   = getattr(state, "delta_exhaustion", ""),
+                    ict_ml_score       = _tg_ml_score,
                 )
                 log.info(f"📱 Telegram notificare trimisă {'(SCALE IN)' if _is_tg_scale_in else ''}")
             except Exception as _tg_err:
@@ -3685,6 +3819,12 @@ async def receive_nt8_data(request: Request, background_tasks: BackgroundTasks):
                 else:
                     state.daily_loss_usd   += abs(_pnl_usd)
                     state.consecutive_losses += 1
+                # ── RL context update — notifică stacking de rezultatul trade-ului ──
+                if _ICT_GATE_OK and _ict_gate is not None:
+                    try:
+                        _ict_gate.record_trade_outcome(_pnl_usd > 0)
+                    except Exception:
+                        pass
                 log.info(f"📋 AUTO-SYNC trade logat: {_sync_dir} {_sync_entry}→{_exit_px} PnL=${_pnl_usd:+.2f} {_result} R={_r_mult}")
             # v9.5: dacă trade-ul s-a închis DUPĂ ce trailing a fost activat (partial_done=True)
             # → marcăm că așteptăm reset de semnal înainte de re-entry în aceeași direcție
@@ -4155,6 +4295,15 @@ async def execution_confirm(confirm: ExecutionConfirm):
     if action in ("REDUCE", "MOVE_SL"):
         log.info(f"📥 NT8 confirm {action} @ {confirm.price:.2f} qty={confirm.qty} → acknowledged (no state change)")
         return {"status": "confirmed", "action": action.lower() + "_acknowledged"}
+
+    # ── ICT Gate v3: marchează trade executat (activează limita 1/zi) ──────────
+    if action in ("BUY", "SELL") and _ICT_GATE_OK and _ict_gate is not None:
+        try:
+            _gate_sig = getattr(state, '_ict_gate_signal', None)
+            _ict_gate.mark_trade_taken(_gate_sig or {"action": action, "price": confirm.price})
+            log.info(f"ICT Gate: trade marcat ({action} @ {confirm.price:.2f}) → max 1/zi atins")
+        except Exception as _ge2:
+            log.debug(f"ICT Gate mark_trade_taken eroare: {_ge2}")
 
     # ── BUY / SELL — înregistrăm INTRAREA, nu adăugăm în trade_log încă ────
     if action in ("BUY", "SELL"):

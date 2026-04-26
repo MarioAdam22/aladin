@@ -197,7 +197,8 @@ def send_trade_executed(direction: str, score: float, sl: float, tp: float,
                         is_scale_in: bool = False, scale_in_qty: int = 0,
                         scale_in_total_qty: int = 0, avg_entry: float = 0,
                         component_scores: dict = None, ict_signals: dict = None,
-                        vp_context: dict = None, delta_exhaustion: str = "") -> bool:
+                        vp_context: dict = None, delta_exhaustion: str = "",
+                        ict_ml_score: float = 0.0) -> bool:
     """
     Notificare când Aladin execută un trade real.
     Apelat din bridge_api._auto_execute după execuție.
@@ -262,6 +263,13 @@ def send_trade_executed(direction: str, score: float, sl: float, tp: float,
         exhaust_emoji = "🔴" if "SHORT" in delta_exhaustion else "🟢"
         exhaust_line  = f"\n⚡ <b>Delta Exhaustion:</b> {exhaust_emoji} {delta_exhaustion}"
 
+    # ── ML Setup Score ────────────────────────────────────────────────────────
+    ml_line = ""
+    if ict_ml_score > 0:
+        ml_emoji = "🟢" if ict_ml_score >= 0.40 else ("🟡" if ict_ml_score >= 0.25 else "🔴")
+        ml_wr    = "~61%" if ict_ml_score >= 0.40 else ("~53%" if ict_ml_score >= 0.25 else "~35%")
+        ml_line  = f"\n🤖 <b>ML Setup Score:</b> {ml_emoji} <b>{ict_ml_score:.2f}</b>  (WR estimat {ml_wr})"
+
     if is_scale_in:
         avg_str = f"\n📊 <b>Entry mediu:</b> <code>{avg_entry:.2f}</code>" if avg_entry > 0 else ""
         message = (
@@ -286,7 +294,7 @@ def send_trade_executed(direction: str, score: float, sl: float, tp: float,
             f"✅ <b>TP:</b> <code>{tp:.2f}</code>  ({tp_pts:.0f} pts)\n"
             f"📐 <b>R:R</b> 1:{r_ratio}\n"
             f"💰 <b>Risc:</b> ${risk_usd:.0f}{trades_str}"
-            f"{score_breakdown}{ict_line}{vp_line}{exhaust_line}\n\n"
+            f"{score_breakdown}{ict_line}{vp_line}{exhaust_line}{ml_line}\n\n"
             f"<i>🤖 Aladin Quantum-ICT</i>"
         )
 
@@ -348,11 +356,12 @@ def send_status_reply(state_snapshot: dict) -> bool:
     else:
         trade_line = "\n\n💤 <b>Niciun trade deschis</b>"
 
+    strat_line = f"\n📋 Strategie: {strat}" if strat and strat != "—" else ""
+
     message = f"""📊 <b>Aladin Status [{now_str}]</b>
 
 🤖 AutoTrade: {auto}
-{mode}
-📋 Strategie: {strat}
+{mode}{strat_line}
 ⏰ Sesiune: {in_win}
 📊 Trades azi: {t_today}/{t_max}
 

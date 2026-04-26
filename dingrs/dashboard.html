@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Aladin Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  :root {
+    --bg:        #0a0e1a;
+    --panel:     #111827;
+    --border:    #1f2937;
+    --accent:    #3b82f6;
+    --green:     #10b981;
+    --red:       #ef4444;
+    --yellow:    #f59e0b;
+    --text:      #e5e7eb;
+    --muted:     #6b7280;
+    --long:      #10b981;
+    --short:     #ef4444;
+    --wait:      #6b7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    min-height: 100vh;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .header-title {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 20px; font-weight: 700; letter-spacing: 2px;
+  }
+  .header-title .logo { font-size: 26px; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+  .status-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 16px;
+    padding: 16px 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .card-title {
+    font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 12px;
+  }
+
+  /* SCORE CARD */
+  .score-card { grid-column: 1 / 2; grid-row: 1 / 2; }
+  .score-big {
+    font-size: 64px; font-weight: 900; line-height: 1;
+    letter-spacing: -2px;
+  }
+  .score-big.long  { color: var(--long); }
+  .score-big.short { color: var(--short); }
+  .score-big.wait  { color: var(--wait); }
+  .score-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .verdict-text {
+    font-size: 13px; margin-top: 10px; padding: 8px 12px;
+    background: rgba(59,130,246,0.08); border-radius: 8px;
+    border-left: 3px solid var(--accent);
+    line-height: 1.5;
+  }
+
+  /* DIRECTION BADGE */
+  .direction-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 14px; border-radius: 20px;
+    font-size: 13px; font-weight: 700; letter-spacing: 1px;
+    margin-top: 10px;
+  }
+  .direction-badge.long  { background: rgba(16,185,129,0.15); color: var(--long);  border: 1px solid rgba(16,185,129,0.3); }
+  .direction-badge.short { background: rgba(239,68,68,0.15);  color: var(--short); border: 1px solid rgba(239,68,68,0.3); }
+  .direction-badge.wait  { background: rgba(107,114,128,0.15); color: var(--wait); border: 1px solid rgba(107,114,128,0.3); }
+
+  /* AI SCORE */
+  .ai-card { grid-column: 2 / 3; grid-row: 1 / 2; }
+  .ai-bar-wrap { margin-top: 8px; }
+  .bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+  .bar-track {
+    height: 10px; background: var(--border); border-radius: 5px; overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%; border-radius: 5px;
+    transition: width 0.6s ease;
+  }
+  .bar-fill.blue   { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+  .bar-fill.green  { background: linear-gradient(90deg, #10b981, #34d399); }
+  .bar-fill.purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+  .bar-fill.yellow { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  .component-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+
+  /* AUTOTRADE TOGGLE */
+  .autotrade-card { grid-column: 3 / 4; grid-row: 1 / 2; }
+  .toggle-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; margin-top: 8px; }
+  .toggle-btn {
+    width: 80px; height: 40px; border-radius: 20px; border: none; cursor: pointer;
+    position: relative; transition: background 0.3s;
+    outline: none;
+  }
+  .toggle-btn.on  { background: var(--green); box-shadow: 0 0 16px rgba(16,185,129,0.4); }
+  .toggle-btn.off { background: var(--border); }
+  .toggle-btn::after {
+    content: ''; position: absolute; top: 4px; width: 32px; height: 32px;
+    border-radius: 50%; background: white; transition: left 0.3s;
+  }
+  .toggle-btn.on::after  { left: 44px; }
+  .toggle-btn.off::after { left: 4px; }
+  .toggle-label { font-size: 22px; font-weight: 800; letter-spacing: 2px; }
+  .toggle-label.on  { color: var(--green); }
+  .toggle-label.off { color: var(--muted); }
+  .toggle-sub { font-size: 12px; color: var(--muted); text-align: center; }
+  .toggle-stats { display: flex; gap: 20px; }
+  .tstat { text-align: center; }
+  .tstat-val { font-size: 22px; font-weight: 700; }
+  .tstat-val.green { color: var(--green); }
+  .tstat-val.red   { color: var(--red); }
+  .tstat-lbl { font-size: 11px; color: var(--muted); }
+
+  /* SENTIMENT */
+  .sentiment-card { grid-column: 1 / 2; grid-row: 2 / 3; }
+  .sentiment-meter {
+    position: relative; height: 14px; background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
+    border-radius: 7px; margin: 12px 0; overflow: visible;
+  }
+  .sentiment-needle {
+    position: absolute; top: -5px; width: 4px; height: 24px;
+    background: white; border-radius: 2px;
+    transform: translateX(-50%);
+    transition: left 0.8s ease;
+    box-shadow: 0 0 6px rgba(255,255,255,0.6);
+  }
+  .sentiment-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+  .sentiment-value {
+    font-size: 32px; font-weight: 800; text-align: center; margin: 8px 0 4px;
+    transition: color 0.5s;
+  }
+  .sentiment-label {
+    text-align: center; font-size: 13px; font-weight: 600; letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .sentiment-details { display: flex; gap: 12px; margin-top: 10px; }
+  .sent-chip {
+    flex: 1; padding: 6px 10px; border-radius: 8px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+    font-size: 11px;
+  }
+  .sent-chip-title { color: var(--muted); margin-bottom: 2px; }
+  .sent-chip-val { font-size: 15px; font-weight: 700; }
+
+  /* EQUITY CURVE */
+  .equity-card {
+    grid-column: 2 / 4; grid-row: 2 / 3;
+  }
+  .chart-wrap { width: 100%; height: 200px; }
+
+  /* SIGNALS TABLE */
+  .signals-card { grid-column: 1 / 4; grid-row: 3 / 4; }
+  .signals-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .signals-table th {
+    text-align: left; padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted); font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .signals-table td { padding: 7px 10px; border-bottom: 1px solid rgba(31,41,55,0.5); }
+  .signals-table tr:hover td { background: rgba(59,130,246,0.04); }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 700;
+  }
+  .pill.long  { background: rgba(16,185,129,0.15); color: var(--green); }
+  .pill.short { background: rgba(239,68,68,0.15);  color: var(--red); }
+  .pill.wait  { background: rgba(107,114,128,0.15); color: var(--muted); }
+
+  .time-chip { color: var(--muted); font-size: 11px; }
+
+  /* KILLZONE + REGIME */
+  .meta-row {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .meta-chip {
+    font-size: 11px; padding: 3px 10px; border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .meta-chip.active { color: var(--accent); border-color: rgba(59,130,246,0.3); }
+
+  /* REFRESH */
+  .refresh-btn {
+    padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); cursor: pointer; font-size: 12px;
+    font-family: inherit;
+  }
+  .refresh-btn:hover { background: var(--border); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+const {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine, Area, AreaChart
+} = Recharts;
+
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const API   = "http://localhost:8000";  // bridge_api.py
+const SUPA_URL = "https://krkyoxxuhzxemrubksrg.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtya3lveHh1aHp4ZW1ydWJrc3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjM4ODksImV4cCI6MjA4OTczOTg4OX0.5aWsEee38gL1rhpqyMbnng2SAFsuvCx-oBqeFXK6U34";
+const POLL_MS = 3000;  // refresh live score la 3 secunde
+
+// ── Supabase fetch helpers ─────────────────────────────────────────────────────
+async function supaFetch(path) {
+  try {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${path}`, {
+      headers: {
+        apikey: SUPA_KEY,
+        Authorization: `Bearer ${SUPA_KEY}`,
+        "Content-Type": "application/json",
+      }
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+async function apiFetch(path, opts = {}) {
+  try {
+    const r = await fetch(`${API}${path}`, opts);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+// ── Formatters ─────────────────────────────────────────────────────────────────
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit" }) + " " +
+         d.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" });
+}
+
+// ── COMPONENT: ScoreCard ───────────────────────────────────────────────────────
+function ScoreCard({ analysis, lastUpdate }) {
+  const score = analysis?.score ?? 0;
+  const dir   = (analysis?.trade_direction || "WAIT").toLowerCase();
+  const verdict = analysis?.verdict || "— Așteptând date NT8 —";
+  const kz    = analysis?.killzone || "";
+  const regime = analysis?.regime || "";
+  const live  = analysis?.live_mode;
+
+  return (
+    <div className="card score-card">
+      <div className="card-title">⚡ Live Score</div>
+      <div className={`score-big ${dir}`}>{score.toFixed(1)}%</div>
+      <div className="score-sub">
+        Updated {lastUpdate ? fmtTime(lastUpdate) : "—"}
+        {live && <span style={{color:"#f59e0b", marginLeft:8}}>● LIVE</span>}
+      </div>
+      <div className={`direction-badge ${dir}`}>
+        {dir === "long" ? "▲" : dir === "short" ? "▼" : "◆"} {dir.toUpperCase()}
+      </div>
+      <div className="verdict-text">{verdict}</div>
+      <div className="meta-row">
+        {kz && <span className={`meta-chip ${kz !== "Outside" ? "active" : ""}`}>🕐 {kz}</span>}
+        {regime && <span className="meta-chip">📊 {regime}</span>}
+        {analysis?.noise_filter && <span className="meta-chip" style={{color:"#f59e0b"}}>🔇 Noise</span>}
+        {analysis?.circuit_breaker && <span className="meta-chip" style={{color:"#ef4444"}}>⛔ CB</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── COMPONENT: AIBreakdown ─────────────────────────────────────────────────────
+function AIBreakdown({ analysis }) {
+  const ai    = analysis?.ai_score   ?? 0;
+  const q     = analysis?.quantum_score ?? 0;
+  const score = analysis?.score      ?? 0;
+  const ict   = (analysis?.ict_component ?? 0) * 100;
+  const imb   = (analysis?.orderflow_component ?? 0) * 100;
+
+  const bars = [
+    { label: "Score totale", val: score, cls: "blue",   max: 100 },
+    { label: "AI (XGBoost)", val: ai,    cls: "green",  max: 100 },
+    { label: "Quantum",      val: q,     cls: "purple", max: 100 },
+    { label: "ICT",          val: ict,   cls: "yellow", max: 100 },
+  ];
+
+  return (
+    <div className="card ai-card">
+      <div className="card-title">🤖 Componente Score</div>
+      <div className="component-grid">
+        {bars.map(b => (
+          <div key={b.label} className="ai-bar-wrap">
+            <div className="bar-label">
+              <span>{b.label}</span>
+              <span style={{color: "#9ca3af"}}>{b.val.toFixed(1)}%</span>
+            </div>
+            <div className="bar-track">
+              <div
+                className={`bar-fill ${b.cls}`}
+                style={{ width: `${Math.min(b.val / b.max * 100, 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      {analysis?.risk && (
+        <div style={{marginTop:12, fontSize:12, color:"#9ca3af", lineHeight:1.7}}>
+          <div>SL: <b style={{color:"#ef4444"}}>{analysis.risk.sl}</b> &nbsp;|&nbsp;
+               TP: <b style={{color:"#10b981"}}>{analysis.risk.tp ?? "—"}</b></div>
+          <div>Risk: <b style={{color:"#f59e0b"}}>${analysis.risk.risk_usd ?? "—"}</b> &nbsp;|&nbsp;
+               {analysis.risk.risk_pct}%</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── COMPONENT: AutotradeToggle ─────────────────────────────────────────────────
+function AutotradeToggle({ stats }) {
+  const [on, setOn] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/autotrade/status").then(d => {
+      if (d && d.enabled !== undefined) setOn(d.enabled);
+    });
+  }, []);
+
+  async function toggle() {
+    setLoading(true);
+    const res = await apiFetch("/autotrade/toggle", { method: "POST" });
+    if (res && res.enabled !== undefined) setOn(res.enabled);
+    setLoading(false);
+  }
+
+  const wins   = stats?.wins ?? 0;
+  const losses = stats?.losses ?? 0;
+  const pnl    = stats?.total_pnl ?? 0;
+  const wr     = stats?.win_rate ?? 0;
+
+  return (
+    <div className="card autotrade-card">
+      <div className="card-title">🎯 Autotrade</div>
+      <div className="toggle-wrap">
+        <div className="toggle-stats">
+          <div className="tstat">
+            <div className={`tstat-val ${pnl >= 0 ? "green" : "red"}`}>
+              ${pnl >= 0 ? "+" : ""}{pnl.toFixed(0)}
+            </div>
+            <div className="tstat-lbl">Total PnL</div>
+          </div>
+          <div className="tstat">
+            <div className="tstat-val" style={{color:"#9ca3af"}}>{wr.toFixed(0)}%</div>
+            <div className="tstat-lbl">Win Rate</div>
+          </div>
+          <div className="tstat">
+            <div className="tstat-val green">{wins}</div>
+            <div className="tstat-lbl">Wins</div>
+          </div>
+          <div className="tstat">
+            <div className="tstat-val red">{losses}</div>
+            <div className="tstat-lbl">Losses</div>
+          </div>
+        </div>
+        <div
+          className={`toggle-btn ${on ? "on" : "off"}`}
+          onClick={loading ? undefined : toggle}
+          title={on ? "Click to disable" : "Click to enable"}
+        />
+        <div className={`toggle-label ${on ? "on" : "off"}`}>{on ? "ON" : "OFF"}</div>
+        <div className="toggle-sub">{on ? "Trading automat activ" : "Trading manual"}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── COMPONENT: SentimentCard ───────────────────────────────────────────────────
+function SentimentCard({ sentiment }) {
+  // combined_score: -1 → +1
+  const score = sentiment?.combined_score ?? 0;
+  const label = sentiment?.label ?? "NEUTRAL";
+  const news  = sentiment?.news?.score ?? 0;
+  const social= sentiment?.social?.score ?? 0;
+  const mult  = sentiment?.sentiment_mult ?? 1.0;
+
+  // Poziție ac: score -1→+1 mapat la 0→100%
+  const needlePct = Math.round((score + 1) / 2 * 100);
+
+  const color = score > 0.2 ? "#10b981" : score < -0.2 ? "#ef4444" : "#f59e0b";
+
+  return (
+    <div className="card sentiment-card">
+      <div className="card-title">🧠 Market Sentiment</div>
+      <div className="sentiment-value" style={{color}}>{(score * 100).toFixed(0)}</div>
+      <div className="sentiment-label" style={{color}}>{label}</div>
+      <div className="sentiment-meter">
+        <div className="sentiment-needle" style={{left: `${needlePct}%`}} />
+      </div>
+      <div className="sentiment-labels">
+        <span>BEARISH</span>
+        <span>NEUTRAL</span>
+        <span>BULLISH</span>
+      </div>
+      <div className="sentiment-details">
+        <div className="sent-chip">
+          <div className="sent-chip-title">FinBERT</div>
+          <div className="sent-chip-val" style={{color: news>0?"#10b981":news<0?"#ef4444":"#9ca3af"}}>
+            {(news * 100).toFixed(0)}
+          </div>
+        </div>
+        <div className="sent-chip">
+          <div className="sent-chip-title">Stocktwits</div>
+          <div className="sent-chip-val" style={{color: social>0?"#10b981":social<0?"#ef4444":"#9ca3af"}}>
+            {(social * 100).toFixed(0)}
+          </div>
+        </div>
+        <div className="sent-chip">
+          <div className="sent-chip-title">Mult</div>
+          <div className="sent-chip-val" style={{color: mult>1?"#10b981":mult<1?"#ef4444":"#9ca3af"}}>
+            ×{mult.toFixed(2)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── COMPONENT: EquityCurve ─────────────────────────────────────────────────────
+function EquityCurve({ trades }) {
+  const data = React.useMemo(() => {
+    if (!trades || trades.length === 0) return [];
+    let balance = 10000;
+    return [...trades]
+      .filter(t => t.status !== "OPEN" && t.pnl != null)
+      .sort((a, b) => new Date(a.ts_open) - new Date(b.ts_open))
+      .map((t, i) => {
+        balance += Number(t.pnl);
+        return {
+          name: `#${i + 1}`,
+          balance: Math.round(balance),
+          pnl: Number(t.pnl).toFixed(0),
+          dir: t.direction,
+          ts: fmtDate(t.ts_open),
+        };
+      });
+  }, [trades]);
+
+  const startBalance = 10000;
+  const lastBalance  = data.length ? data[data.length - 1].balance : startBalance;
+  const totalPnl     = lastBalance - startBalance;
+  const pnlColor     = totalPnl >= 0 ? "#10b981" : "#ef4444";
+
+  if (data.length === 0) {
+    return (
+      <div className="card equity-card">
+        <div className="card-title">📈 Equity Curve &amp; PnL History</div>
+        <div style={{textAlign:"center", color:"var(--muted)", marginTop:60, fontSize:13}}>
+          Niciun trade închis încă.<br/>
+          <span style={{fontSize:11}}>Trade-urile vor apărea după execuție.</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card equity-card">
+      <div className="card-title" style={{display:"flex", justifyContent:"space-between"}}>
+        <span>📈 Equity Curve</span>
+        <span style={{color: pnlColor, fontWeight:700}}>
+          {totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(0)} ({data.length} trades)
+        </span>
+      </div>
+      <div className="chart-wrap">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="colorBal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.25} />
+                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }} />
+            <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} width={60}
+              tickFormatter={v => `$${v.toLocaleString()}`} />
+            <Tooltip
+              contentStyle={{ background:"#111827", border:"1px solid #1f2937", borderRadius:8, fontSize:12 }}
+              formatter={(v, n) => [`$${Number(v).toLocaleString()}`, n === "balance" ? "Capital" : n]}
+              labelFormatter={(l, p) => p?.[0]?.payload?.ts ?? l}
+            />
+            <ReferenceLine y={startBalance} stroke="#6b7280" strokeDasharray="4 2" />
+            <Area type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2}
+              fill="url(#colorBal)" dot={{ r: 3, fill: "#3b82f6" }} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ── COMPONENT: SignalsTable ────────────────────────────────────────────────────
+function SignalsTable({ signals }) {
+  if (!signals || signals.length === 0) return (
+    <div className="card signals-card">
+      <div className="card-title">🕐 Ultimele Semnale (Supabase)</div>
+      <div style={{color:"var(--muted)", textAlign:"center", padding:24, fontSize:13}}>
+        Niciun semnal logat încă.
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="card signals-card">
+      <div className="card-title">🕐 Ultimele Semnale (Supabase)</div>
+      <table className="signals-table">
+        <thead>
+          <tr>
+            <th>Timp</th>
+            <th>Dir</th>
+            <th>Score</th>
+            <th>AI</th>
+            <th>Regime</th>
+            <th>Killzone</th>
+            <th>Sent×</th>
+            <th>VIX×</th>
+            <th>Live</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          {signals.map(s => (
+            <tr key={s.id}>
+              <td className="time-chip">{fmtDate(s.ts)}</td>
+              <td><span className={`pill ${(s.direction||"wait").toLowerCase()}`}>{s.direction}</span></td>
+              <td style={{color: s.score_pct > 65 ? "#10b981" : s.score_pct > 50 ? "#f59e0b" : "#6b7280",
+                           fontWeight:700}}>{s.score_pct}%</td>
+              <td style={{color:"#9ca3af"}}>{s.ai_score}%</td>
+              <td style={{color:"#6b7280", fontSize:11}}>{s.regime || "—"}</td>
+              <td style={{color: s.killzone && s.killzone !== "Outside" && s.killzone !== "" ? "#3b82f6" : "#6b7280",
+                           fontSize:11}}>{s.killzone || "—"}</td>
+              <td style={{color: s.sentiment_mult > 1 ? "#10b981" : s.sentiment_mult < 1 ? "#ef4444" : "#6b7280"}}>
+                ×{(s.sentiment_mult||1).toFixed(2)}
+              </td>
+              <td style={{color: s.vix_mult < 1 ? "#ef4444" : "#6b7280"}}>×{(s.vix_mult||1).toFixed(2)}</td>
+              <td style={{color: s.live_mode ? "#f59e0b" : "#374151"}}>{s.live_mode ? "●" : "○"}</td>
+              <td style={{color:"#6b7280", fontSize:11, maxWidth:200, overflow:"hidden",
+                           textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{s.verdict || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── APP ────────────────────────────────────────────────────────────────────────
+function App() {
+  const [analysis,  setAnalysis]  = useState(null);
+  const [signals,   setSignals]   = useState([]);
+  const [trades,    setTrades]    = useState([]);
+  const [sentiment, setSentiment] = useState(null);
+  const [stats,     setStats]     = useState(null);
+  const [apiOnline, setApiOnline] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const wsRef = useRef(null);
+
+  // ── WebSocket live (bridge_api.py) ──────────────────────────────────────────
+  useEffect(() => {
+    function connect() {
+      const ws = new WebSocket("ws://localhost:8000/ws");
+      wsRef.current = ws;
+      ws.onopen = () => { setApiOnline(true); };
+      ws.onclose = () => {
+        setApiOnline(false);
+        setTimeout(connect, 4000);
+      };
+      ws.onerror = () => ws.close();
+      ws.onmessage = (ev) => {
+        try {
+          const d = JSON.parse(ev.data);
+          if (d.type === "analysis" && d.data) {
+            setAnalysis(d.data);
+            setLastUpdate(new Date().toISOString());
+            // Extrage sentiment din analysis dacă disponibil
+            if (d.data.sentiment) setSentiment(d.data.sentiment);
+          }
+        } catch {}
+      };
+    }
+    connect();
+    return () => wsRef.current?.close();
+  }, []);
+
+  // ── Polling Supabase (signals + trades + stats) ───────────────────────────
+  const loadSupabase = useCallback(async () => {
+    const [sig, tr] = await Promise.all([
+      supaFetch("signals?select=*&order=ts.desc&limit=15"),
+      supaFetch("trades?select=*&order=ts_open.desc&limit=100"),
+    ]);
+    if (sig)  setSignals(sig);
+    if (tr)   setTrades(tr);
+
+    // Calculează stats local
+    if (tr) {
+      const closed = tr.filter(t => t.status !== "OPEN");
+      const wins   = closed.filter(t => t.pnl > 0).length;
+      const tot    = closed.length;
+      const pnl    = closed.reduce((a, t) => a + Number(t.pnl), 0);
+      setStats({
+        wins, losses: tot - wins,
+        win_rate: tot ? wins / tot * 100 : 0,
+        total_pnl: pnl,
+      });
+    }
+  }, []);
+
+  // ── Polling API status ────────────────────────────────────────────────────
+  useEffect(() => {
+    loadSupabase();
+    const id = setInterval(loadSupabase, 15000); // refresh Supabase la 15s
+    return () => clearInterval(id);
+  }, [loadSupabase]);
+
+  // ── Fallback poll dacă WS nu merge ───────────────────────────────────────
+  useEffect(() => {
+    if (apiOnline) return;
+    const id = setInterval(async () => {
+      const d = await apiFetch("/status");
+      if (d) {
+        setApiOnline(true);
+        if (d.last_analysis) {
+          setAnalysis(d.last_analysis);
+          setLastUpdate(new Date().toISOString());
+        }
+      }
+    }, POLL_MS);
+    return () => clearInterval(id);
+  }, [apiOnline]);
+
+  return (
+    <div>
+      {/* HEADER */}
+      <div className="header">
+        <div className="header-title">
+          <span className="logo">🌙</span>
+          ALADIN DASHBOARD
+        </div>
+        <div className="header-right">
+          <span style={{fontSize:11, color:"var(--muted)"}}>
+            {lastUpdate ? `Last: ${fmtTime(lastUpdate)}` : "—"}
+          </span>
+          <div className={`status-dot ${apiOnline ? "" : "offline"}`} title={apiOnline ? "Bridge API online" : "Bridge API offline"} />
+          <span style={{fontSize:12, color: apiOnline ? "var(--green)" : "var(--red)"}}>
+            {apiOnline ? "LIVE" : "OFFLINE"}
+          </span>
+          <button className="refresh-btn" onClick={loadSupabase}>⟳ Refresh</button>
+        </div>
+      </div>
+
+      {/* GRID */}
+      <div className="grid">
+        <ScoreCard analysis={analysis} lastUpdate={lastUpdate} />
+        <AIBreakdown analysis={analysis} />
+        <AutotradeToggle stats={stats} />
+        <SentimentCard sentiment={sentiment ?? {
+          combined_score: signals[0] ? ((signals[0].sentiment_score ?? 0.5) * 2 - 1) : 0,
+          label: "NEUTRAL",
+          news:   { score: 0 },
+          social: { score: 0 },
+          sentiment_mult: signals[0]?.sentiment_mult ?? 1.0,
+        }} />
+        <EquityCurve trades={trades} />
+        <SignalsTable signals={signals} />
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

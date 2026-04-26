@@ -20,9 +20,14 @@ Import & use pattern:
     )
 """
 from __future__ import annotations
+import warnings
 import numpy as np
 import pandas as pd
 from typing import Optional, Tuple, Dict, Any
+
+# Suprimăm PerformanceWarning din pandas — cauzat de adăugarea coloanelor una câte una
+# în funcțiile add_*_features(). Nu afectează corectitudinea calculelor.
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
 # ════════════════════════════════════════════════════════════════════════════
 # REGIME CLASSES
